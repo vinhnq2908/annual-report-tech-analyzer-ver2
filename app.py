@@ -156,8 +156,6 @@ def public_url(raw_url: str) -> str:
     except socket.gaierror as exc:
         raise ValueError(f"Không phân giải được tên miền: {host}") from exc
     return url
-
-
 def download_pdf(url: str) -> bytes:
     request = Request(url, headers={"User-Agent": "AnnualReportTechAnalyzer/1.0"})
     with urlopen(request, timeout=30) as response:
@@ -208,11 +206,21 @@ def count_matches(text: str, terms: list[str]) -> int:
     return len(find_matches(text, terms))
 
 
+GLYPH_NAME = re.compile(r"/uni([0-9A-Fa-f]{4})")
+
+
+def fix_glyph_names(text: str) -> str:
+    # Font PDF thiếu bảng ToUnicode: pypdf trả tên glyph "/uni1EB7" thay vì ký tự "ặ".
+    text = GLYPH_NAME.sub(lambda m: chr(int(m.group(1), 16)), text)
+    return unicodedata.normalize("NFC", text)
+
+
 def extract_pages(pdf: bytes) -> tuple[int, list[dict]]:
     reader = PdfReader(io.BytesIO(pdf))
     pages = []
     for number, page in enumerate(reader.pages, start=1):
-        text = re.sub(r"-\s*\n\s*", "", page.extract_text() or "")
+        text = fix_glyph_names(page.extract_text() or "")
+        text = re.sub(r"-\s*\n\s*", "", text)
         text = " ".join(text.split())
         if text:
             pages.append({"page": number, "text": text, "normalized": normalize_text(text)})
@@ -222,7 +230,7 @@ def extract_pages(pdf: bytes) -> tuple[int, list[dict]]:
 def classify_evidence(name, url, pages_count, pages, erp_terms, tech_terms, context_terms,
                       action_terms, operational_terms, planned_terms, negative_terms) -> dict:
     raw_erp = raw_tech = relevant_erp = relevant_tech = context_hits = 0
-    action_hits = operational_hits = planned_hits = negative_hits = word_count = best_score = 0
+action_hits = operational_hits = planned_hits = negative_hits = word_count = best_score = 0
     relevant_terms, evidence = set(), []
     for page in pages:
         word_count += len(page["text"].split())
@@ -278,7 +286,7 @@ def classify_evidence(name, url, pages_count, pages, erp_terms, tech_terms, cont
         "erp_frequency": raw_erp, "erp_accounting_frequency": relevant_erp,
         "accounting_tech_frequency": raw_tech,
         "accounting_tech_relevant_frequency": relevant_tech,
-        "technology_frequency": relevant_erp + relevant_tech,
+"technology_frequency": relevant_erp + relevant_tech,
         "technology_diversity": len(relevant_terms), "accounting_context_hits": context_hits,
         "action_word_hits": action_hits, "operational_evidence_hits": operational_hits,
         "planned_evidence_hits": planned_hits, "negative_evidence_hits": negative_hits,
@@ -326,7 +334,7 @@ def main() -> None:
                     page_count, pages = extract_pages(download_pdf(url))
                     row = classify_evidence(
                         url.rsplit("/", 1)[-1] or url, url, page_count, pages,
-                        erp_terms, tech_terms, context_terms, action_terms,
+erp_terms, tech_terms, context_terms, action_terms,
                         operational_terms, planned_terms, negative_terms,
                     )
                     rows.append(row)
@@ -350,5 +358,5 @@ def main() -> None:
                 )
 
 
-if __name__ == "__main__":
+if _name_ == "_main_":
     main()
